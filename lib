@@ -1,30 +1,47 @@
-local TweenService       = game:GetService("TweenService")
-local UserInputService   = game:GetService("UserInputService")
-local Players            = game:GetService("Players")
-local LocalPlayer        = Players.LocalPlayer or {}
-local PlayerGui          = LocalPlayer:WaitForChild("PlayerGui")
+-- ProjectLunarUI.lua
+-- Place this as a ModuleScript under ReplicatedStorage
+
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Players          = game:GetService("Players")
+local LocalPlayer      = Players.LocalPlayer
+local PlayerGui        = LocalPlayer:WaitForChild("PlayerGui")
+
 local Library = {}
 local Pages   = {}
+
+-- Utility tween helper
 local function tween(inst, props, time, style, dir)
-    return TweenService:Create(inst, TweenInfo.new(time or 0.3, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+    return TweenService:Create(inst,
+        TweenInfo.new(time or 0.3, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+        props)
 end
 
+-- Create the main window
 function Library.CreateMain(opts)
     assert(opts.Title, "CreateMain requires Title")
     opts.Desc = opts.Desc or ""
 
+    -- ScreenGui
     local gui = Instance.new("ScreenGui")
     gui.Name = "ProjectLunarUI"
     gui.ResetOnSpawn = false
     gui.Parent = PlayerGui
 
+    -- Main frame
     local main = Instance.new("Frame", gui)
     main.Name = "Main"
     main.Size = UDim2.new(0, 600, 0, 400)
     main.Position = UDim2.new(0.5, -300, 0.5, -200)
     main.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
-    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 6)
+    local mc = Instance.new("UICorner", main)
+    mc.CornerRadius = UDim.new(0, 6)
+    -- neon border
+    local stroke = Instance.new("UIStroke", main)
+    stroke.Color = Color3.fromRGB(16, 241, 0)
+    stroke.Thickness = 2
 
+    -- Title bar
     local titleBar = Instance.new("Frame", main)
     titleBar.Name = "TitleBar"
     titleBar.Size = UDim2.new(1, 0, 0, 36)
@@ -50,6 +67,7 @@ function Library.CreateMain(opts)
     descLbl.Position = UDim2.new(0, 12, 0, 26)
     descLbl.Size = UDim2.new(0, 300, 0, 16)
 
+    -- Make draggable
     do
         local dragging, dragInput, dragStart, startPos
         titleBar.InputBegan:Connect(function(input)
@@ -72,19 +90,21 @@ function Library.CreateMain(opts)
         UserInputService.InputChanged:Connect(function(input)
             if input == dragInput and dragging then
                 local delta = input.Position - dragStart
-                main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-                                          startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                main.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             end
         end)
     end
 
-
+    -- Sidebar & content
     local sidebar = Instance.new("Frame", main)
     sidebar.Name = "Sidebar"
     sidebar.Size = UDim2.new(0, 120, 1, -36)
     sidebar.Position = UDim2.new(0, 0, 0, 36)
     sidebar.BackgroundTransparency = 1
-    Instance.new("UIListLayout", sidebar).Padding = UDim.new(0,4)
+    local list = Instance.new("UIListLayout", sidebar)
+    list.Padding = UDim.new(0,4)
 
     local content = Instance.new("Frame", main)
     content.Name = "Content"
@@ -100,21 +120,24 @@ function Library.CreateMain(opts)
     return Library
 end
 
-
+-- Add a new page (tab)
 function Library:AddPage(name)
     assert(self._sidebar and self._content, "Call CreateMain first")
-    
 
+    -- Tab button
     local btn = Instance.new("TextButton", self._sidebar)
     btn.Name = name.."_Tab"
     btn.Text = name
     btn.Font = Enum.Font.SourceSans
     btn.TextSize = 16
     btn.TextColor3 = Color3.fromRGB(200,200,200)
-    btn.BackgroundTransparency = 1
+    btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
     btn.Size = UDim2.new(1, 0, 0, 28)
+    btn.AutoButtonColor = false
+    local bc = Instance.new("UICorner", btn)
+    bc.CornerRadius = UDim.new(0,4)
 
-
+    -- Page frame
     local frame = Instance.new("Frame", self._content)
     frame.Name = name.."_Page"
     frame.Size = UDim2.new(1, 0, 1, 0)
@@ -123,19 +146,31 @@ function Library:AddPage(name)
 
     Pages[name] = {button=btn, frame=frame, sections={}}
 
-
+    -- On-click: show this page with animation & highlight
     btn.MouseButton1Click:Connect(function()
-        for _,p in pairs(Pages) do p.frame.Visible = false end
+        -- fade out old
+        for _,p in pairs(Pages) do
+            if p.frame.Visible then
+                tween(p.frame, {BackgroundTransparency=1}, 0.2)
+                p.button.TextColor3 = Color3.fromRGB(200,200,200)
+            end
+            p.frame.Visible = false
+        end
+        -- show new
         frame.Visible = true
+        frame.BackgroundTransparency = 1
+        tween(frame, {BackgroundTransparency=0}, 0.3):Play()
+        -- highlight tab
+        btn.TextColor3 = Color3.fromRGB(16,241,0)
     end)
 
-
+    -- if first page, trigger click
     if #self._sidebar:GetChildren() == 1 then
         btn:CaptureFocus()
-        frame.Visible = true
+        btn.MouseButton1Click:Wait()
     end
 
-
+    -- Section creator
     local proxy = {}
     function proxy:AddSection(title)
         local sec = Instance.new("Frame", frame)
@@ -160,20 +195,29 @@ function Library:AddPage(name)
 
         local section = {frame=sec, container=cont}
 
+        -- Button
         function section:AddButton(text, callback)
             local b = Instance.new("TextButton", cont)
             b.Text = text
             b.Font = Enum.Font.SourceSans
             b.TextSize = 16
             b.TextColor3 = Color3.fromRGB(255,255,255)
-            b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            b.BackgroundColor3 = Color3.fromRGB(50,50,50)
             b.Size = UDim2.new(1,0,0,28)
+            b.AutoButtonColor = false
+            local bcr = Instance.new("UICorner", b)
+            bcr.CornerRadius = UDim.new(0,4)
             -- position stacked
-            local y = (#cont:GetChildren()-1) * 32
-            b.Position = UDim2.new(0,0,0,y)
-            b.MouseButton1Click:Connect(callback)
+            b.LayoutOrder = #cont:GetChildren()
+            b.MouseEnter:Connect(function() tween(b, {BackgroundColor3 = Color3.fromRGB(70,70,70)}, 0.15):Play() end)
+            b.MouseLeave:Connect(function() tween(b, {BackgroundColor3 = Color3.fromRGB(50,50,50)}, 0.15):Play() end)
+            b.MouseButton1Click:Connect(function()
+                tween(b, {BackgroundColor3 = Color3.fromRGB(16,241,0)}, 0.1):Play()
+                callback()
+                delay(0.1, function() tween(b, {BackgroundColor3 = Color3.fromRGB(50,50,50)}, 0.2):Play() end)
+            end)
         end
-        
+
         -- TODO: implement AddToggle, AddSlider, AddDropdown, AddTextbox, AddColorPicker, AddBind
 
         table.insert(Pages[name].sections, section)
@@ -183,6 +227,7 @@ function Library:AddPage(name)
     return proxy
 end
 
+-- Notification popup (styled like CTE HUB)
 function Library.CreateNoti(opts)
     opts.Title    = opts.Title or ""
     opts.Desc     = opts.Desc or ""
@@ -197,34 +242,49 @@ function Library.CreateNoti(opts)
     container.Size        = UDim2.new(0,300,0,0)
     container.BackgroundTransparency = 1
 
+    -- notification frame
     local nf = Instance.new("Frame", container)
-    nf.BackgroundColor3=Color3.fromRGB(35,35,35)
+    nf.Name               = "Noti"
+    nf.Size               = UDim2.new(1,0,0,0)
+    nf.Position           = UDim2.new(0,0,0,-100)
+    nf.BackgroundColor3   = Color3.fromRGB(35,35,35)
     local corner = Instance.new("UICorner", nf)
-    corner.CornerRadius=UDim.new(0,6)
+    corner.CornerRadius   = UDim.new(0,6)
+    local stroke = Instance.new("UIStroke", nf)
+    stroke.Color          = Color3.fromRGB(16,241,0)
+    stroke.Thickness      = 2
 
     local title = Instance.new("TextLabel", nf)
-    title.Text=opts.Title
-    title.Font=Enum.Font.SourceSansBold; title.TextSize=18
-    title.TextColor3=Color3.new(1,1,1)
-    title.BackgroundTransparency=1
-    title.Position=UDim2.new(0,8,0,4); title.Size=UDim2.new(1,-16,0,24)
+    title.Name             = "Title"
+    title.Text             = opts.Title
+    title.Font             = Enum.Font.SourceSansBold
+    title.TextSize         = 18
+    title.TextColor3       = Color3.new(1,1,1)
+    title.BackgroundTransparency = 1
+    title.Position         = UDim2.new(0,8,0,6)
+    title.Size             = UDim2.new(1,-16,0,24)
 
     local desc = Instance.new("TextLabel", nf)
-    desc.Text=opts.Desc
-    desc.Font=Enum.Font.SourceSans; desc.TextSize=14
-    desc.TextColor3=Color3.fromRGB(200,200,200)
-    desc.BackgroundTransparency=1
-    desc.Position=UDim2.new(0,8,0,28); desc.Size=UDim2.new(1,-16,0,16)
+    desc.Name              = "Desc"
+    desc.Text              = opts.Desc
+    desc.Font              = Enum.Font.SourceSans
+    desc.TextSize          = 14
+    desc.TextColor3        = Color3.fromRGB(200,200,200)
+    desc.BackgroundTransparency = 1
+    desc.Position          = UDim2.new(0,8,0,32)
+    desc.Size              = UDim2.new(1,-16,0,16)
 
-    nf.Size = UDim2.new(1,0,0,4+24+4+16+4)
-    nf.Position = UDim2.new(0,0,0,-(4+24+4+16+4))
+    -- calculate size
+    local totalHeight = 6 + 24 + 4 + 16 + 6
+    nf.Size = UDim2.new(1,0,0,totalHeight)
 
-
-    tween(nf, {Position=UDim2.new(0,0,0,0)}, 0.4):Play()
-
+    -- slide down, then up
+    tween(nf, {Position = UDim2.new(0,0,0,0)}, 0.4):Play()
     delay(opts.ShowTime, function()
-        local out = tween(nf, {Position=UDim2.new(0,0,0,-nf.Size.Y.Offset)}, 0.4)
-        out:Play(); out.Completed:Wait(); nc:Destroy()
+        local out = tween(nf, {Position = UDim2.new(0,0,0,-totalHeight)}, 0.4)
+        out:Play()
+        out.Completed:Wait()
+        nc:Destroy()
     end)
 end
 
