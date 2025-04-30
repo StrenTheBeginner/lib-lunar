@@ -1,0 +1,231 @@
+local TweenService       = game:GetService("TweenService")
+local UserInputService   = game:GetService("UserInputService")
+local Players            = game:GetService("Players")
+local LocalPlayer        = Players.LocalPlayer or {}
+local PlayerGui          = LocalPlayer:WaitForChild("PlayerGui")
+local Library = {}
+local Pages   = {}
+local function tween(inst, props, time, style, dir)
+    return TweenService:Create(inst, TweenInfo.new(time or 0.3, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+end
+
+function Library.CreateMain(opts)
+    assert(opts.Title, "CreateMain requires Title")
+    opts.Desc = opts.Desc or ""
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ProjectLunarUI"
+    gui.ResetOnSpawn = false
+    gui.Parent = PlayerGui
+
+    local main = Instance.new("Frame", gui)
+    main.Name = "Main"
+    main.Size = UDim2.new(0, 600, 0, 400)
+    main.Position = UDim2.new(0.5, -300, 0.5, -200)
+    main.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 6)
+
+    local titleBar = Instance.new("Frame", main)
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 36)
+    titleBar.BackgroundTransparency = 1
+
+    local titleLbl = Instance.new("TextLabel", titleBar)
+    titleLbl.Name = "Title"
+    titleLbl.Text = opts.Title
+    titleLbl.Font = Enum.Font.SourceSansBold
+    titleLbl.TextSize = 20
+    titleLbl.TextColor3 = Color3.new(1,1,1)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Position = UDim2.new(0, 12, 0, 6)
+    titleLbl.Size = UDim2.new(0, 200, 0, 24)
+
+    local descLbl = Instance.new("TextLabel", titleBar)
+    descLbl.Name = "Desc"
+    descLbl.Text = opts.Desc
+    descLbl.Font = Enum.Font.SourceSans
+    descLbl.TextSize = 14
+    descLbl.TextColor3 = Color3.fromRGB(180,180,180)
+    descLbl.BackgroundTransparency = 1
+    descLbl.Position = UDim2.new(0, 12, 0, 26)
+    descLbl.Size = UDim2.new(0, 300, 0, 16)
+
+    do
+        local dragging, dragInput, dragStart, startPos
+        titleBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                dragStart = input.Position
+                startPos = main.Position
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+        titleBar.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                dragInput = input
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
+                local delta = input.Position - dragStart
+                main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                          startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+    end
+
+
+    local sidebar = Instance.new("Frame", main)
+    sidebar.Name = "Sidebar"
+    sidebar.Size = UDim2.new(0, 120, 1, -36)
+    sidebar.Position = UDim2.new(0, 0, 0, 36)
+    sidebar.BackgroundTransparency = 1
+    Instance.new("UIListLayout", sidebar).Padding = UDim.new(0,4)
+
+    local content = Instance.new("Frame", main)
+    content.Name = "Content"
+    content.Size = UDim2.new(1, -120, 1, -36)
+    content.Position = UDim2.new(0, 120, 0, 36)
+    content.BackgroundTransparency = 1
+
+    Library._gui = gui
+    Library._main = main
+    Library._sidebar = sidebar
+    Library._content = content
+    Library._pages = Pages
+    return Library
+end
+
+
+function Library:AddPage(name)
+    assert(self._sidebar and self._content, "Call CreateMain first")
+    
+
+    local btn = Instance.new("TextButton", self._sidebar)
+    btn.Name = name.."_Tab"
+    btn.Text = name
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 16
+    btn.TextColor3 = Color3.fromRGB(200,200,200)
+    btn.BackgroundTransparency = 1
+    btn.Size = UDim2.new(1, 0, 0, 28)
+
+
+    local frame = Instance.new("Frame", self._content)
+    frame.Name = name.."_Page"
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundTransparency = 1
+    frame.Visible = false
+
+    Pages[name] = {button=btn, frame=frame, sections={}}
+
+
+    btn.MouseButton1Click:Connect(function()
+        for _,p in pairs(Pages) do p.frame.Visible = false end
+        frame.Visible = true
+    end)
+
+
+    if #self._sidebar:GetChildren() == 1 then
+        btn:CaptureFocus()
+        frame.Visible = true
+    end
+
+
+    local proxy = {}
+    function proxy:AddSection(title)
+        local sec = Instance.new("Frame", frame)
+        sec.Name = title.."_Section"
+        sec.Size = UDim2.new(1,0,0,100)
+        sec.BackgroundTransparency = 1
+
+        local lbl = Instance.new("TextLabel", sec)
+        lbl.Text = title
+        lbl.Font = Enum.Font.SourceSansBold
+        lbl.TextSize = 18
+        lbl.TextColor3 = Color3.fromRGB(255,255,255)
+        lbl.BackgroundTransparency = 1
+        lbl.Position = UDim2.new(0,0,0,0)
+        lbl.Size = UDim2.new(1,0,0,24)
+
+        local cont = Instance.new("Frame", sec)
+        cont.Name = "Container"
+        cont.Position = UDim2.new(0,0,0,24)
+        cont.Size = UDim2.new(1,0,1,-24)
+        cont.BackgroundTransparency = 1
+
+        local section = {frame=sec, container=cont}
+
+        function section:AddButton(text, callback)
+            local b = Instance.new("TextButton", cont)
+            b.Text = text
+            b.Font = Enum.Font.SourceSans
+            b.TextSize = 16
+            b.TextColor3 = Color3.fromRGB(255,255,255)
+            b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            b.Size = UDim2.new(1,0,0,28)
+            -- position stacked
+            local y = (#cont:GetChildren()-1) * 32
+            b.Position = UDim2.new(0,0,0,y)
+            b.MouseButton1Click:Connect(callback)
+        end
+        
+        -- TODO: implement AddToggle, AddSlider, AddDropdown, AddTextbox, AddColorPicker, AddBind
+
+        table.insert(Pages[name].sections, section)
+        return section
+    end
+
+    return proxy
+end
+
+function Library.CreateNoti(opts)
+    opts.Title    = opts.Title or ""
+    opts.Desc     = opts.Desc or ""
+    opts.ShowTime = opts.ShowTime or 3
+
+    local nc = Instance.new("ScreenGui", PlayerGui)
+    nc.Name = "ProjectLunarNoti"
+
+    local container = Instance.new("Frame", nc)
+    container.AnchorPoint = Vector2.new(0.5,0)
+    container.Position    = UDim2.new(0.5,0,0,10)
+    container.Size        = UDim2.new(0,300,0,0)
+    container.BackgroundTransparency = 1
+
+    local nf = Instance.new("Frame", container)
+    nf.BackgroundColor3=Color3.fromRGB(35,35,35)
+    local corner = Instance.new("UICorner", nf)
+    corner.CornerRadius=UDim.new(0,6)
+
+    local title = Instance.new("TextLabel", nf)
+    title.Text=opts.Title
+    title.Font=Enum.Font.SourceSansBold; title.TextSize=18
+    title.TextColor3=Color3.new(1,1,1)
+    title.BackgroundTransparency=1
+    title.Position=UDim2.new(0,8,0,4); title.Size=UDim2.new(1,-16,0,24)
+
+    local desc = Instance.new("TextLabel", nf)
+    desc.Text=opts.Desc
+    desc.Font=Enum.Font.SourceSans; desc.TextSize=14
+    desc.TextColor3=Color3.fromRGB(200,200,200)
+    desc.BackgroundTransparency=1
+    desc.Position=UDim2.new(0,8,0,28); desc.Size=UDim2.new(1,-16,0,16)
+
+    nf.Size = UDim2.new(1,0,0,4+24+4+16+4)
+    nf.Position = UDim2.new(0,0,0,-(4+24+4+16+4))
+
+
+    tween(nf, {Position=UDim2.new(0,0,0,0)}, 0.4):Play()
+
+    delay(opts.ShowTime, function()
+        local out = tween(nf, {Position=UDim2.new(0,0,0,-nf.Size.Y.Offset)}, 0.4)
+        out:Play(); out.Completed:Wait(); nc:Destroy()
+    end)
+end
+
+return Library
