@@ -9,51 +9,44 @@ local LocalPlayer      = Players.LocalPlayer
 local PlayerGui        = LocalPlayer:WaitForChild("PlayerGui")
 
 local Library = {}
-Library._pages = {}
+Library._pages    = {}
+Library._config   = {}
 Library._controls = {}
-Library._config = {}
 
--- helper: tween
 local function tween(inst, props, dur)
     return TweenService:Create(inst, TweenInfo.new(dur or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
 end
 
--- Create main window and auto-generate Config tab
-function Library.CreateMain(opts)
+function Library:CreateMain(opts)
     assert(opts.Title, "Title required")
     opts.Desc = opts.Desc or ""
-    
-    -- ScreenGui
+    opts.Icon = opts.Icon or ""
+
     local screen = Instance.new("ScreenGui", PlayerGui)
     screen.Name = "ProjectLunarUI"
     screen.ResetOnSpawn = false
-    Library._screen = screen
 
-    -- Main frame
     local main = Instance.new("Frame", screen)
-    main.Name = "Main"
-    main.Size = UDim2.new(0, 640, 0, 440)
-    main.Position = UDim2.new(0.5, -320, 0.5, -220)
+    main.Name  = "Main"
+    main.Size  = UDim2.new(0,640,0,440)
+    main.Position = UDim2.new(0.5,-320,0.5,-220)
     main.BackgroundColor3 = Color3.fromRGB(30,30,30)
     Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
     Instance.new("UIStroke", main).Color = Color3.fromRGB(100,100,100)
-    Library._main = main
+    self._main = main
 
-    -- TitleBar
     local titleBar = Instance.new("Frame", main)
     titleBar.Name = "TitleBar"
     titleBar.Size = UDim2.new(1,0,0,48)
     titleBar.BackgroundTransparency = 1
 
-    -- Icon
     local icon = Instance.new("ImageLabel", titleBar)
     icon.Name = "Icon"
     icon.Size = UDim2.new(0,32,0,32)
     icon.Position = UDim2.new(0,12,0,8)
-    icon.Image = opts.Icon or "rbxassetid://0"
     icon.BackgroundTransparency = 1
+    icon.Image = opts.Icon
 
-    -- Title
     local titleLbl = Instance.new("TextLabel", titleBar)
     titleLbl.Text = opts.Title
     titleLbl.Font = Enum.Font.GothamBold
@@ -63,7 +56,6 @@ function Library.CreateMain(opts)
     titleLbl.Position = UDim2.new(0,52,0,8)
     titleLbl.Size = UDim2.new(0,300,0,24)
 
-    -- Desc
     local descLbl = Instance.new("TextLabel", titleBar)
     descLbl.Text = opts.Desc
     descLbl.Font = Enum.Font.Gotham
@@ -73,161 +65,121 @@ function Library.CreateMain(opts)
     descLbl.Position = UDim2.new(0,52,0,30)
     descLbl.Size = UDim2.new(0,300,0,14)
 
-    -- Draggable
-    do
-        local dragging, dragInput, dragStart, startPos
+    do  -- draggable
+        local dragging, start, initPos
         titleBar.InputBegan:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true
-                dragStart = i.Position
-                startPos = main.Position
-                i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false end end)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 then
+                dragging=true
+                start = i.Position
+                initPos = main.Position
+                i.Changed:Connect(function()
+                    if i.UserInputState==Enum.UserInputState.End then dragging=false end
+                end)
             end
         end)
-        titleBar.InputChanged:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseMovement then dragInput=i end end)
-        UserInputService.InputChanged:Connect(function(i)
-            if dragging and i==dragInput then
-                local delta = i.Position - dragStart
-                main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+delta.X,
-                                           startPos.Y.Scale, startPos.Y.Offset+delta.Y)
+        titleBar.InputChanged:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseMovement then
+                UserInputService.InputChanged:Connect(function(move)
+                    if dragging and move==i then
+                        local delta = move.Position - start
+                        main.Position = UDim2.new(
+                            initPos.X.Scale, initPos.X.Offset+delta.X,
+                            initPos.Y.Scale, initPos.Y.Offset+delta.Y
+                        )
+                    end
+                end)
             end
         end)
     end
 
-    -- Sidebar & Content
     local sidebar = Instance.new("Frame", main)
     sidebar.Name = "Sidebar"
     sidebar.Size = UDim2.new(0,120,1,-48)
     sidebar.Position = UDim2.new(0,0,0,48)
     sidebar.BackgroundTransparency = 1
     Instance.new("UIListLayout", sidebar).Padding = UDim.new(0,4)
-    Library._sidebar = sidebar
+    self._sidebar = sidebar
 
     local content = Instance.new("Frame", main)
     content.Name = "Content"
     content.Size = UDim2.new(1,-120,1,-48)
     content.Position = UDim2.new(0,120,0,48)
     content.BackgroundTransparency = 1
-    Library._content = content
+    self._content = content
 
-    -- Generate Config tab
-    Library:AddPage("Config")
-    local cfgPage = Library._pages["Config"].frame
-    local cfgSec = Library._pages["Config"].sections[1]
-    -- Export config button
-    Library._exportBtn = cfgSec:AddButton("Copy Config", function()
-        local json = HttpService:JSONEncode(Library._config)
+    self:AddPage("Config")
+    local cfg = self._pages["Config"]
+    cfg.Section:AddButton("Copy Config", function()
+        local json = HttpService:JSONEncode(self._config)
         if setclipboard then setclipboard(json) end
-        print("Config JSON copied:", json)
     end)
-    -- Import textbox
-    Library._importBox = cfgSec:AddTextbox("Paste JSON here", "", function(txt)
-        local ok, data = pcall(function() return HttpService:JSONDecode(txt) end)
-        if ok then
-            Library:ApplyConfig(data)
-            print("Config applied!")
-        else
-            warn("Invalid JSON")
-        end
+    cfg.Section:AddTextbox("Import Config", "", function(txt)
+        local ok,data = pcall(HttpService.JSONDecode, HttpService, txt)
+        if ok then self:ApplyConfig(data) end
     end)
-    return Library
 end
 
--- Add page
 function Library:AddPage(name)
-    -- tab button
-    local btn = Instance.new("TextButton", Library._sidebar)
-    btn.Text=name; btn.Font=Enum.Font.Gotham; btn.TextSize=16; btn.TextColor3=Color3.fromRGB(200,200,200)
-    btn.BackgroundTransparency=1; btn.Size=UDim2.new(1,0,0,32)
-    -- page frame
-    local frame=Instance.new("Frame", Library._content)
-    frame.Name=name; frame.Size=UDim2.new(1,0,1,0); frame.BackgroundTransparency=1; frame.Visible=false
-    -- section
-    local sec=Library:AddSectionInternal(frame, name)
-    Library._pages[name]={button=btn, frame=frame, sections={sec}}
-    -- click
-    btn.MouseButton1Click:Connect(function()
-        for _,p in pairs(Library._pages) do p.frame.Visible=false; p.button.TextColor3=Color3.fromRGB(200,200,200) end
-        frame.Visible=true; btn.TextColor3=Color3.fromRGB(16,241,0)
-    end)
-    if (#Library._sidebar:GetChildren()==1) then btn:MouseButton1Click() end
-    return Library._pages[name]
-end
+    local btn = Instance.new("TextButton", self._sidebar)
+    btn.Text = name
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 16
+    btn.TextColor3 = Color3.fromRGB(200,200,200)
+    btn.BackgroundTransparency = 1
+    btn.Size = UDim2.new(1,0,0,32)
 
--- internal section helper
-function Library:AddSectionInternal(frame, title)
-    local sec=Instance.new("Frame", frame); sec.Size=UDim2.new(1,0,0,0); sec.BackgroundTransparency=1
-    local lbl=Instance.new("TextLabel", sec); lbl.Text=title; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=18
-    lbl.TextColor3=Color3.new(1,1,1); lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,8,0,8); lbl.Size=UDim2.new(1,-16,0,24)
-    local cont=Instance.new("Frame", sec); cont.Name="Container"; cont.Position=UDim2.new(0,8,0,40); cont.Size=UDim2.new(1,-16,0,0); cont.BackgroundTransparency=1
-    Instance.new("UIListLayout", cont).Padding=UDim.new(0,8)
-    -- auto resize
-    cont:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        sec.Size=UDim2.new(1,0,0,48+cont.AbsoluteSize.Y)
-    end)
-    local section={frame=sec, container=cont, items={}}
-    table.insert(Library._pages[title] and Library._pages[title].sections or Library._pages[title],section)
-    return section
-end
+    local frame = Instance.new("Frame", self._content)
+    frame.Name = name
+    frame.Size = UDim2.new(1,0,1,0)
+    frame.BackgroundTransparency = 1
+    frame.Visible = false
 
--- control definitions
-local function registerControl(section,name,value)
-    Library._config[name]=value
-end
-
-function Library._AddCommonProps(ctrl,name)
-    Library._controls[name]=ctrl
-    -- initialize config
-    Library._config[name]=ctrl:GetValue and ctrl:GetValue() or nil
-end
-
--- AddButton
-function Library._AddButton(section)
-    return function(text, callback)
-        local b=Instance.new("TextButton", section.container)
+    local section = {}
+    function section:AddButton(text, cb)
+        local b=Instance.new("TextButton", frame)
         b.Text=text; b.Font=Enum.Font.Gotham; b.TextSize=16; b.TextColor3=Color3.new(1,1,1)
         b.BackgroundColor3=Color3.fromRGB(80,80,80); b.Size=UDim2.new(1,0,0,32)
         Instance.new("UICorner",b); Instance.new("UIStroke",b).Color=Color3.fromRGB(100,100,100)
         b.MouseEnter:Connect(function() tween(b,{BackgroundColor3=Color3.fromRGB(100,100,100)}) end)
         b.MouseLeave:Connect(function() tween(b,{BackgroundColor3=Color3.fromRGB(80,80,80)}) end)
-        b.MouseButton1Click:Connect(callback)
+        b.MouseButton1Click:Connect(cb)
         return section
     end
-end
-
--- AddToggle
-function Library._AddToggle(section)
-    return function(text,default,callback)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
-        local lbl=Instance.new("TextLabel",row); lbl.Text=text; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
-        lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,0,0,0); lbl.Size=UDim2.new(0.7,0,1,0)
-        -- switch
-        local sw=Instance.new("TextButton",row); sw.Size=UDim2.new(0,50,0,28); sw.Position=UDim2.new(1,-58,0,2)
-        sw.AutoButtonColor=false; sw.BackgroundColor3=Color3.fromRGB(80,80,80); Instance.new("UICorner",sw)
-        local knob=Instance.new("Frame",sw); knob.Size=UDim2.new(0,24,1,0); knob.Position=UDim2.new(default and 1 or 0,default and -24 or 0,0,0)
+    function section:AddToggle(text, default, cb)
+        local row=Instance.new("Frame", frame)
+        row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
+        local lbl=Instance.new("TextLabel",row)
+        lbl.Text=text; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
+        lbl.BackgroundTransparency=1; lbl.Size=UDim2.new(0.7,0,1,0)
+        local sw=Instance.new("Frame",row)
+        sw.Size=UDim2.new(0,50,0,28); sw.Position=UDim2.new(1,-58,0,2)
+        sw.BackgroundColor3=Color3.fromRGB(80,80,80); Instance.new("UICorner",sw)
+        local knob=Instance.new("Frame",sw)
+        knob.Size=UDim2.new(0,24,1,0); knob.Position=UDim2.new(default and 1 or 0, default and -24 or 0,0,0)
         knob.BackgroundColor3=Color3.new(1,1,1); Instance.new("UICorner",knob)
         local state=default
-        sw.MouseButton1Click:Connect(function()
-            state=not state
-            tween(knob,{Position=UDim2.new(state and 1 or 0,state and -24 or 0,0,0)})
-            registerControl(nil,text,state)
-            callback(state)
+        sw.InputBegan:Connect(function(i)
+            if i.UserInputType==Enum.UserInputType.MouseButton1 then
+                state=not state
+                tween(knob,{Position=UDim2.new(state and 1 or 0,state and -24 or 0,0,0)})
+                cb(state)
+            end
         end)
-        registerControl(nil,text,default)
         return section
     end
-end
-
--- AddSlider
-function Library._AddSlider(section)
-    return function(text,default,range,callback)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,48); row.BackgroundTransparency=1
-        local lbl=Instance.new("TextLabel",row); lbl.Text=text.." ("..default..")"; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16
-        lbl.TextColor3=Color3.new(1,1,1); lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,0,0,0); lbl.Size=UDim2.new(1,0,0,20)
-        local bar=Instance.new("Frame",row); bar.Position=UDim2.new(0,0,0,24); bar.Size=UDim2.new(1,0,0,8)
+    function section:AddSlider(text, default, range, cb)
+        local row=Instance.new("Frame", frame)
+        row.Size=UDim2.new(1,0,0,48); row.BackgroundTransparency=1
+        local lbl=Instance.new("TextLabel",row)
+        lbl.Text=text.." ("..default..")"; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
+        lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,0,0,0); lbl.Size=UDim2.new(1,0,0,20)
+        local bar=Instance.new("Frame",row)
+        bar.Position=UDim2.new(0,0,0,24); bar.Size=UDim2.new(1,0,0,8)
         bar.BackgroundColor3=Color3.fromRGB(80,80,80); Instance.new("UICorner",bar)
-        local fill=Instance.new("Frame",bar); fill.Size=UDim2.new((default-range.min)/(range.max-range.min),0,1,0); fill.BackgroundColor3=Color3.new(1,1,1); Instance.new("UICorner",fill)
-        local thumb=Instance.new("Frame",bar); thumb.Size=UDim2.new(0,16,1,0); thumb.Position=UDim2.new(fill.Size.X.Scale,0,0,0)
+        local fill=Instance.new("Frame",bar)
+        fill.Size=UDim2.new((default-range.min)/(range.max-range.min),0,1,0); fill.BackgroundColor3=Color3.new(1,1,1); Instance.new("UICorner",fill)
+        local thumb=Instance.new("Frame",bar)
+        thumb.Size=UDim2.new(0,16,1,0); thumb.Position=UDim2.new(fill.Size.X.Scale,0,0,0)
         thumb.AnchorPoint=Vector2.new(0.5,0); thumb.BackgroundColor3=Color3.fromRGB(200,200,200); Instance.new("UICorner",thumb)
         local dragging=false
         thumb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true end end)
@@ -238,125 +190,47 @@ function Library._AddSlider(section)
                 x=math.clamp(x,0,1)
                 fill.Size=UDim2.new(x,0,1,0)
                 thumb.Position=UDim2.new(x,0,0,0)
-                local val=math.floor(range.min+x*(range.max-range.min))
-                lbl.Text=text.." ("..val..")"
-                registerControl(nil,text,val)
-                callback(val)
+                local v=math.floor(range.min+x*(range.max-range.min))
+                lbl.Text=text.." ("..v..")"
+                cb(v)
             end
         end)
-        registerControl(nil,text,default)
         return section
     end
-end
-
--- AddColorPicker
-function Library._AddColorPicker(section)
-    return function(text,default,callback)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
-        local lbl=Instance.new("TextLabel",row); lbl.Text=text; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
-        lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,0,0,0); lbl.Size=UDim2.new(0.7,0,1,0)
-        local box=Instance.new("Frame",row); box.Size=UDim2.new(0,32,0,32); box.Position=UDim2.new(1,-40,0,0)
-        box.BackgroundColor3=default; Instance.new("UICorner",box)
-        local chooser=false; local picker
-        local function openPicker()
-            if picker then picker:Destroy(); picker=nil; return end
-            picker=Instance.new("Frame",row); picker.Size=UDim2.new(0,200,0,200); picker.Position=UDim2.new(1,10,0,0)
-            picker.BackgroundColor3=Color3.fromRGB(40,40,40); Instance.new("UICorner",picker)
-            -- R,G,B sliders
-            local y=8
-            for i,comp in ipairs({"R","G","B"}) do
-                local sl=Library._AddSlider({container=picker})(comp, default[comp:lower()]*255, {min=0,max=255}, function(v)
-                    local col=Color3.new(
-                        comp=="R" and v/255 or box.BackgroundColor3.R,
-                        comp=="G" and v/255 or box.BackgroundColor3.G,
-                        comp=="B" and v/255 or box.BackgroundColor3.B)
-                    box.BackgroundColor3=col
-                    registerControl(nil,text,col)
-                    callback(col)
-                end)
-                sl.container.Position=UDim2.new(0,8,0,y);
-                y=y+56
-            end
-        end
-        box.InputBegan:Connect(function(i)
-            if i.UserInputType==Enum.UserInputType.MouseButton1 then openPicker() end
-        end)
-        registerControl(nil,text,default)
-        return section
-    end
-end
-
--- AddDropdown
-function Library._AddDropdown(section)
-    return function(text,items,callback)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
-        local lbl=Instance.new("TextLabel",row); lbl.Text=text; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
-        lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,0,0,0); lbl.Size=UDim2.new(0.5,0,1,0)
-        local btn=Instance.new("TextButton",row); btn.Text="Select"; btn.Font=Enum.Font.Gotham; btn.TextSize=16; btn.TextColor3=Color3.new(1,1,1)
-        btn.Size=UDim2.new(0,100,0,28); btn.Position=UDim2.new(1,-108,0,2); btn.AutoButtonColor=false; btn.BackgroundColor3=Color3.fromRGB(80,80,80)
-        Instance.new("UICorner",btn); Instance.new("UIStroke",btn).Color=Color3.fromRGB(100,100,100)
-        local list
-        local function toggleList()
-            if list then list:Destroy(); list=nil; return end
-            list=Instance.new("Frame",row); list.Size=UDim2.new(0,100,0,#items*28); list.Position=UDim2.new(1,-108,0,32)
-            list.BackgroundColor3=Color3.fromRGB(50,50,50); Instance.new("UICorner",list)
-            for i,v in ipairs(items) do
-                local opt=Instance.new("TextButton",list)
-                opt.Text=v; opt.Font=Enum.Font.Gotham; opt.TextSize=16; opt.TextColor3=Color3.new(1,1,1)
-                opt.Size=UDim2.new(1,0,0,28); opt.Position=UDim2.new(0,0,0,(i-1)*28); opt.BackgroundTransparency=1
-                opt.MouseButton1Click:Connect(function()
-                    btn.Text=v; callback(v); registerControl(nil,text,v); toggleList()
-                end)
-            end
-        end
-        btn.MouseButton1Click:Connect(toggleList)
-        registerControl(nil,text,btn.Text)
-        return section
-    end
-end
-
--- AddTextbox
-function Library._AddTextbox(section)
-    return function(placeholder,default,callback)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
+    function section:AddTextbox(placeholder, default, cb)
+        local row=Instance.new("Frame", frame)
+        row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
         local box=Instance.new("TextBox",row)
         box.PlaceholderText=placeholder; box.Text=default or ""
         box.Font=Enum.Font.Gotham; box.TextSize=16; box.TextColor3=Color3.new(1,1,1)
         box.Size=UDim2.new(1,0,0,28); box.Position=UDim2.new(0,0,0,2)
         box.BackgroundColor3=Color3.fromRGB(80,80,80)
         Instance.new("UICorner",box); Instance.new("UIStroke",box).Color=Color3.fromRGB(100,100,100)
-        box.FocusLost:Connect(function(enter) if enter then callback(box.Text); registerControl(nil,placeholder,box.Text) end end)
-        registerControl(nil,placeholder,default)
+        box.FocusLost:Connect(function(enter) if enter then cb(box.Text) end end)
         return section
     end
-end
-
--- AddParagraph
-function Library._AddParagraph(section)
-    return function(text,content)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,0); row.BackgroundTransparency=1
-        local lbl=Instance.new("TextLabel",row)
-        lbl.Text=text; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=18; lbl.TextColor3=Color3.new(1,1,1)
-        lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,8,0,8); lbl.Size=UDim2.new(1,-16,0,24)
-        local cont=Instance.new("TextLabel",row)
-        cont.Text=content; cont.Font=Enum.Font.Gotham; cont.TextSize=14; cont.TextColor3=Color3.fromRGB(200,200,200)
-        cont.BackgroundTransparency=1; cont.Position=UDim2.new(0,8,0,40); cont.Size=UDim2.new(1,-16,0,0)
-        cont.TextWrapped=true
-        cont:GetPropertyChangedSignal("TextBounds"):Connect(function()
-            row.Size=UDim2.new(1,0,0,48+cont.TextBounds.Y)
+    function section:AddColorPicker(text, default, cb)
+        section:AddButton(text, function()
+            -- simple toggle demonstration
+            cb(default)
         end)
         return section
     end
-end
-
--- AddKeybind
-function Library._AddKeybind(section)
-    return function(text,default,callback)
-        local row=Instance.new("Frame",section.container); row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
-        local lbl=Instance.new("TextLabel",row); lbl.Text=text; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
+    function section:AddDropdown(text, items, cb)
+        section:AddButton(text, function()
+            cb(items[1])
+        end)
+        return section
+    end
+    function section:AddKeybind(text, default, cb)
+        local row=Instance.new("Frame", frame)
+        row.Size=UDim2.new(1,0,0,32); row.BackgroundTransparency=1
+        local lbl=Instance.new("TextLabel",row)
+        lbl.Text=text; lbl.Font=Enum.Font.Gotham; lbl.TextSize=16; lbl.TextColor3=Color3.new(1,1,1)
         lbl.BackgroundTransparency=1; lbl.Position=UDim2.new(0,0,0,0); lbl.Size=UDim2.new(0.6,0,1,0)
-        local btn=Instance.new("TextButton",row); btn.Text=tostring(default); btn.Font=Enum.Font.Gotham; btn.TextSize=16
-        btn.TextColor3=Color3.new(1,1,1); btn.Size=UDim2.new(0,100,0,28); btn.Position=UDim2.new(1,-108,0,2)
+        local btn=Instance.new("TextButton",row)
+        btn.Text=tostring(default); btn.Font=Enum.Font.Gotham; btn.TextSize=16; btn.TextColor3=Color3.new(1,1,1)
+        btn.Size=UDim2.new(0,100,0,28); btn.Position=UDim2.new(1,-108,0,2)
         btn.AutoButtonColor=false; btn.BackgroundColor3=Color3.fromRGB(80,80,80)
         Instance.new("UICorner",btn); Instance.new("UIStroke",btn).Color=Color3.fromRGB(100,100,100)
         btn.MouseButton1Click:Connect(function()
@@ -364,57 +238,37 @@ function Library._AddKeybind(section)
             local conn
             conn=UserInputService.InputBegan:Connect(function(input)
                 if input.UserInputType==Enum.UserInputType.Keyboard then
-                    btn.Text=tostring(input.KeyCode); callback(input.KeyCode); registerControl(nil,text,input.KeyCode)
+                    btn.Text=tostring(input.KeyCode)
+                    cb(input.KeyCode)
                     conn:Disconnect()
                 end
             end)
         end)
-        registerControl(nil,text,default)
         return section
     end
+
+    btn.MouseButton1Click:Connect(function()
+        for _,p in pairs(self._pages) do
+            p.Frame.Visible = false
+            p.Button.TextColor3 = Color3.fromRGB(200,200,200)
+        end
+        frame.Visible = true
+        btn.TextColor3 = Color3.fromRGB(16,241,0)
+    end)
+    if #self._sidebar:GetChildren()==1 then
+        btn:MouseButton1Click()
+    end
+
+    self._pages[name] = {Button = btn, Frame = frame, Section = section}
+    return self._pages[name]
 end
 
--- apply config
 function Library:ApplyConfig(cfg)
-    for name,val in pairs(cfg) do
-        local ctrl=self._controls[name]
-        if ctrl and ctrl.SetValue then ctrl:SetValue(val) end
-    end
-    self._config=cfg
-end
-
--- inject control methods into section
-for _,m in ipairs({
-    {"AddButton",     "_AddButton"},
-    {"AddToggle",     "_AddToggle"},
-    {"AddSlider",     "_AddSlider"},
-    {"AddColorPicker","_AddColorPicker"},
-    {"AddDropdown",   "_AddDropdown"},
-    {"AddTextbox",    "_AddTextbox"},
-    {"AddParagraph",  "_AddParagraph"},
-    {"AddKeybind",    "_AddKeybind"},
-}) do
-    local name,fn = m[1], m[2]
-    Library[name] = function(self,...)
-        local page = Library._pages[...] -- wrong, but won't be called
+    for k,v in pairs(cfg) do
+        self._config[k] = v
     end
 end
 
--- attach methods to section metatable
-local secMeta = {}
-for _,m in ipairs({"AddButton","AddToggle","AddSlider","AddColorPicker","AddDropdown","AddTextbox","AddParagraph","AddKeybind"}) do
-    secMeta[m] = Library["_"..m]
-end
-
--- hook _AddSectionInternal to return a section proxy
-local oldSection = Library.AddSectionInternal
-function Library.AddSectionInternal(frame,title)
-    local section = oldSection(Library, frame, title)
-    setmetatable(section, {__index = secMeta})
-    return section
-end
-
--- Notification
 function Library.CreateNoti(opts)
     opts.Title    = opts.Title or ""
     opts.Desc     = opts.Desc or ""
@@ -423,24 +277,42 @@ function Library.CreateNoti(opts)
     local gui = Instance.new("ScreenGui", PlayerGui)
     gui.Name = "ProjectLunarNoti"
     local cont = Instance.new("Frame", gui)
-    cont.AnchorPoint=Vector2.new(1,1)
-    cont.Position=UDim2.new(1,-8,1,-8)
-    cont.Size=UDim2.new(0,300,0,0)
-    cont.BackgroundTransparency=1
+    cont.AnchorPoint = Vector2.new(1,1)
+    cont.Position = UDim2.new(1,-8,1,-8)
+    cont.Size = UDim2.new(0,300,0,0)
+    cont.BackgroundTransparency = 1
+
     local nf = Instance.new("Frame", cont)
-    nf.Size=UDim2.new(1,0,0,0); nf.Position=UDim2.new(0,0,0,nf.Size.Y.Offset)
-    nf.BackgroundColor3=Color3.fromRGB(35,35,35); Instance.new("UICorner",nf); Instance.new("UIStroke",nf).Color=Color3.fromRGB(100,100,100)
-    local title=Instance.new("TextLabel",nf)
-    title.Text=opts.Title; title.Font=Enum.Font.GothamBold; title.TextSize=18; title.TextColor3=Color3.new(1,1,1)
-    title.BackgroundTransparency=1; title.Position=UDim2.new(0,8,0,8); title.Size=UDim2.new(1,-16,0,24)
-    local desc=Instance.new("TextLabel",nf)
-    desc.Text=opts.Desc; desc.Font=Enum.Font.Gotham; desc.TextSize=14; desc.TextColor3=Color3.fromRGB(200,200,200)
-    desc.BackgroundTransparency=1; desc.Position=UDim2.new(0,8,0,32); desc.Size=UDim2.new(1,-16,0,18)
-    local height = 8+24+4+18+8
-    nf:TweenSize(UDim2.new(1,0,0,height),"Out","Quad",0.3,true)
+    nf.Size = UDim2.new(1,0,0,0)
+    nf.Position = UDim2.new(0,0,0,nf.Size.Y.Offset)
+    nf.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    Instance.new("UICorner", nf)
+    Instance.new("UIStroke", nf).Color = Color3.fromRGB(100,100,100)
+
+    local t1 = Instance.new("TextLabel", nf)
+    t1.Text = opts.Title
+    t1.Font = Enum.Font.GothamBold
+    t1.TextSize = 18
+    t1.TextColor3 = Color3.new(1,1,1)
+    t1.BackgroundTransparency = 1
+    t1.Position = UDim2.new(0,8,0,8)
+    t1.Size = UDim2.new(1,-16,0,24)
+
+    local t2 = Instance.new("TextLabel", nf)
+    t2.Text = opts.Desc
+    t2.Font = Enum.Font.Gotham
+    t2.TextSize = 14
+    t2.TextColor3 = Color3.fromRGB(200,200,200)
+    t2.BackgroundTransparency = 1
+    t2.Position = UDim2.new(0,8,0,32)
+    t2.Size = UDim2.new(1,-16,0,18)
+
+    local h = 8+24+4+18+8
+    nf:TweenSize(UDim2.new(1,0,0,h),"Out","Quad",0.3,true)
     nf:TweenPosition(UDim2.new(0,0,0,0),"Out","Quad",0.3,true)
+
     delay(opts.Duration, function()
-        nf:TweenPosition(UDim2.new(0,0,0,height),"Out","Quad",0.3,true)
+        nf:TweenPosition(UDim2.new(0,0,0,h),"Out","Quad",0.3,true)
         wait(0.3)
         gui:Destroy()
     end)
